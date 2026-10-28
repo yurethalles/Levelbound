@@ -1,0 +1,8 @@
+[Bb]in/
+[Oo]bj/
+outputs/
+upstream/
+*.dll
+*.pdb
+*.cache
+*.user
