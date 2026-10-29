@@ -53,7 +53,8 @@ namespace DornsLevelbound
             diagnostic;
         ConfigEntry<bool> showBiomeWarning;
         ConfigEntry<string> blockedActionMessage;
-        ConfigEntry<float> blockedActionDuration, blockedActionCooldown;
+        ConfigEntry<float> blockedActionDuration,
+            blockedActionCooldown;
         BiomeRule global;
         readonly Dictionary<Heightmap.Biome, ConfigEntry<int>> globalLevels =
             new Dictionary<Heightmap.Biome, ConfigEntry<int>>();
@@ -134,7 +135,12 @@ namespace DornsLevelbound
                 Config.Save();
             }
             foreach (Feature feature in Enum.GetValues(typeof(Feature)))
-                rule.Locks[feature] = Bind(section, "Bloquear" + feature, true, "Bloqueia " + FeatureText(feature) + " abaixo do nível mínimo.");
+                rule.Locks[feature] = Bind(
+                    section,
+                    "Bloquear" + feature,
+                    true,
+                    "Bloqueia " + FeatureText(feature) + " abaixo do nível mínimo."
+                );
             return rule;
         }
 
@@ -170,10 +176,30 @@ namespace DornsLevelbound
                 false,
                 "Registra regras carregadas no log."
             );
-            showBiomeWarning = Bind("Mensagens", "MostrarAvisoAoEntrarNoBioma", false, "Desativado por padrão. Mensagens devem ocorrer ao tentar ações bloqueadas.");
-            blockedActionMessage = Bind("Mensagens", "MensagemDeAcaoBloqueada", "<color=#ff6666>Ação bloqueada</color>: requer nível {nivel} do EpicMMO. Seu nível: {atual}.", "Use {nivel} e {atual}.");
-            blockedActionDuration = Bind("Mensagens", "DuracaoDaMensagemDeAcao", 3f, "Segundos que a mensagem de ação bloqueada fica no centro da tela.");
-            blockedActionCooldown = Bind("Mensagens", "IntervaloEntreMensagensDeAcao", 2f, "Intervalo mínimo, em segundos, entre mensagens de ação bloqueada.");
+            showBiomeWarning = Bind(
+                "Mensagens",
+                "MostrarAvisoAoEntrarNoBioma",
+                false,
+                "Desativado por padrão. Mensagens devem ocorrer ao tentar ações bloqueadas."
+            );
+            blockedActionMessage = Bind(
+                "Mensagens",
+                "MensagemDeAcaoBloqueada",
+                "<color=#ff6666>Ação bloqueada</color>: requer nível {nivel} do EpicMMO. Seu nível: {atual}.",
+                "Use {nivel} e {atual}."
+            );
+            blockedActionDuration = Bind(
+                "Mensagens",
+                "DuracaoDaMensagemDeAcao",
+                3f,
+                "Segundos que a mensagem de ação bloqueada fica no centro da tela."
+            );
+            blockedActionCooldown = Bind(
+                "Mensagens",
+                "IntervaloEntreMensagensDeAcao",
+                2f,
+                "Intervalo mínimo, em segundos, entre mensagens de ação bloqueada."
+            );
             global = AddRule("Regras Globais", 0, false);
             AddGlobalLevel("Meadows", Heightmap.Biome.Meadows, 1);
             AddGlobalLevel("BlackForest", Heightmap.Biome.BlackForest, 10);
@@ -402,7 +428,8 @@ namespace DornsLevelbound
 
         internal void CheckBiome(Player p)
         {
-            if (!showBiomeWarning.Value) return;
+            if (!showBiomeWarning.Value)
+                return;
             if (p != Player.m_localPlayer || Bypass())
                 return;
             BiomeRule r = Rule(p.GetCurrentBiome());
@@ -450,10 +477,12 @@ namespace DornsLevelbound
         internal bool ItemLevelLocked(ItemDrop.ItemData item, out int requirement)
         {
             requirement = 0;
-            if (Bypass()) return false;
+            if (Bypass())
+                return false;
             BiomeRule rule;
             Heightmap.Biome biome;
-            if (!ItemRule(item, out rule, out biome)) return false;
+            if (!ItemRule(item, out rule, out biome))
+                return false;
             requirement = RequiredLevel(biome, rule);
             return requirement > 0 && Level() < requirement;
         }
@@ -461,19 +490,23 @@ namespace DornsLevelbound
         internal bool BlockItemPickup(ItemDrop.ItemData item)
         {
             int requirement;
-            if (!ItemLevelLocked(item, out requirement)) return false;
+            if (!ItemLevelLocked(item, out requirement))
+                return false;
             Tell(requirement);
             return true;
         }
 
         internal bool BlockPickupPrefab(GameObject prefab)
         {
-            if (prefab == null || Bypass()) return false;
+            if (prefab == null || Bypass())
+                return false;
             Heightmap.Biome biome;
-            if (!itemBiomes.TryGetValue(prefab.name, out biome)) return false;
+            if (!itemBiomes.TryGetValue(prefab.name, out biome))
+                return false;
             BiomeRule rule = Rule(biome);
             int requirement = RequiredLevel(biome, rule);
-            if (requirement <= 0 || Level() >= requirement) return false;
+            if (requirement <= 0 || Level() >= requirement)
+                return false;
             Tell(requirement);
             return true;
         }
@@ -483,8 +516,16 @@ namespace DornsLevelbound
             if (Time.time < nextItemMessage)
                 return;
             nextItemMessage = Time.time + Mathf.Max(0f, blockedActionCooldown.Value);
-            string configuredMessage = blockedActionMessage.Value.Replace("{nivel}", n.ToString()).Replace("{atual}", Level().ToString());
-            Player.m_localPlayer.Message(MessageHud.MessageType.Center, configuredMessage, 0, null, false);
+            string configuredMessage = blockedActionMessage
+                .Value.Replace("{nivel}", n.ToString())
+                .Replace("{atual}", Level().ToString());
+            Player.m_localPlayer.Message(
+                MessageHud.MessageType.Center,
+                configuredMessage,
+                0,
+                null,
+                false
+            );
             return;
             MessageHud.instance.ShowMessage(
                 MessageHud.MessageType.Center,
@@ -496,23 +537,40 @@ namespace DornsLevelbound
             );
         }
 
-        static string FeatureText(Feature feature) { return feature.ToString(); }
+        static string FeatureText(Feature feature)
+        {
+            return feature.ToString();
+        }
 
         IEnumerator HideCenterMessage(float duration)
         {
             yield return new WaitForSeconds(Mathf.Max(0.1f, duration));
-            FieldInfo field = typeof(MessageHud).GetField("m_messageCenterText", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            Component text = field == null || MessageHud.instance == null ? null : field.GetValue(MessageHud.instance) as Component;
-            if (text != null) text.gameObject.SetActive(false);
+            FieldInfo field = typeof(MessageHud).GetField(
+                "m_messageCenterText",
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+            );
+            Component text =
+                field == null || MessageHud.instance == null
+                    ? null
+                    : field.GetValue(MessageHud.instance) as Component;
+            if (text != null)
+                text.gameObject.SetActive(false);
         }
 
         internal bool BlockFeature(Feature feature, Player player)
         {
-            if (player == null || player != Player.m_localPlayer || Bypass()) return false;
+            if (player == null || player != Player.m_localPlayer || Bypass())
+                return false;
             BiomeRule rule = Rule(player.GetCurrentBiome());
             int required = RequiredLevel(player.GetCurrentBiome(), rule);
             ConfigEntry<bool> enabled;
-            if (!rule.Locks.TryGetValue(feature, out enabled) || !enabled.Value || required <= 0 || Level() >= required) return false;
+            if (
+                !rule.Locks.TryGetValue(feature, out enabled)
+                || !enabled.Value
+                || required <= 0
+                || Level() >= required
+            )
+                return false;
             Tell(required);
             return true;
         }
@@ -524,14 +582,14 @@ namespace DornsLevelbound
             if (!ItemRule(item, out r, out b))
                 return "";
             int required = RequiredLevel(b, r);
-            if (required <= 0) return "";
+            if (required <= 0)
+                return "";
             int current = Level();
             string color = current >= required ? "#66ff66" : "#ff6666";
             return "\n<color="
                 + color
-                + ">["
-                + BiomeName(b)
-                + "] Requer nível EpicMMO "
+                + ">"
+                + "Requer nível "
                 + required
                 + " (seu nível: "
                 + current
@@ -618,12 +676,36 @@ namespace DornsLevelbound
             Consume,
         }
 
-        internal enum Feature { EntradaEPermanencia, Dungeon, Teleporte, Construcao, Reparo, RemocaoDePeca, AlteracaoDeTerreno, PortaOuPortao, BauOuConteiner, Estacao, Altar, Comerciante, Mapa, MarcadorDoMapa, Craft, Melhoria, Equipar, UsarItem, ConsumirItem, RecursosDoBioma, SpawnDeCriaturas }
+        internal enum Feature
+        {
+            EntradaEPermanencia,
+            Dungeon,
+            Teleporte,
+            Construcao,
+            Reparo,
+            RemocaoDePeca,
+            AlteracaoDeTerreno,
+            PortaOuPortao,
+            BauOuConteiner,
+            Estacao,
+            Altar,
+            Comerciante,
+            Mapa,
+            MarcadorDoMapa,
+            Craft,
+            Melhoria,
+            Equipar,
+            UsarItem,
+            ConsumirItem,
+            RecursosDoBioma,
+            SpawnDeCriaturas,
+        }
 
         class BiomeRule
         {
             public ConfigEntry<int> Level;
-            public readonly Dictionary<Feature, ConfigEntry<bool>> Locks = new Dictionary<Feature, ConfigEntry<bool>>();
+            public readonly Dictionary<Feature, ConfigEntry<bool>> Locks =
+                new Dictionary<Feature, ConfigEntry<bool>>();
             public ConfigEntry<bool> Area,
                 Craft,
                 Equip,
@@ -744,10 +826,12 @@ namespace DornsLevelbound
     {
         static bool Prefix(Humanoid __instance, GameObject __0)
         {
-            if (!__instance.IsPlayer() || Plugin.Instance == null || __0 == null) return true;
+            if (!__instance.IsPlayer() || Plugin.Instance == null || __0 == null)
+                return true;
             ItemDrop drop = __0.GetComponent<ItemDrop>();
             int requirement;
-            if (drop == null || !Plugin.Instance.ItemLevelLocked(drop.m_itemData, out requirement)) return true;
+            if (drop == null || !Plugin.Instance.ItemLevelLocked(drop.m_itemData, out requirement))
+                return true;
             Plugin.Instance.Tell(requirement);
             return false;
         }
@@ -758,7 +842,9 @@ namespace DornsLevelbound
     {
         static bool Prefix(ItemDrop __instance, Humanoid __0)
         {
-            return !__0.IsPlayer() || Plugin.Instance == null || !Plugin.Instance.BlockItemPickup(__instance.m_itemData);
+            return !__0.IsPlayer()
+                || Plugin.Instance == null
+                || !Plugin.Instance.BlockItemPickup(__instance.m_itemData);
         }
     }
 
@@ -767,7 +853,9 @@ namespace DornsLevelbound
     {
         static bool Prefix(ItemDrop __instance, Humanoid __0)
         {
-            return !__0.IsPlayer() || Plugin.Instance == null || !Plugin.Instance.BlockItemPickup(__instance.m_itemData);
+            return !__0.IsPlayer()
+                || Plugin.Instance == null
+                || !Plugin.Instance.BlockItemPickup(__instance.m_itemData);
         }
     }
 
@@ -809,60 +897,224 @@ namespace DornsLevelbound
         {
             return Plugin.Instance != null && Plugin.Instance.BlockFeature(feature, user as Player);
         }
+
         internal static bool BlockLocal(Plugin.Feature feature)
         {
-            return Plugin.Instance != null && Plugin.Instance.BlockFeature(feature, Player.m_localPlayer);
+            return Plugin.Instance != null
+                && Plugin.Instance.BlockFeature(feature, Player.m_localPlayer);
         }
+
         internal static bool BlockDamage(Plugin.Feature feature, HitData hit)
         {
-            if (Plugin.Instance == null) return false;
+            if (Plugin.Instance == null)
+                return false;
             Player player = hit == null ? null : hit.GetAttacker() as Player;
             return Plugin.Instance.BlockFeature(feature, player ?? Player.m_localPlayer);
         }
     }
 
     [HarmonyPatch(typeof(Teleport), "Interact")]
-    class DungeonPatch { static bool Prefix(Humanoid __0) { return !Guard.Block(Plugin.Feature.Dungeon, __0); } }
+    class DungeonPatch
+    {
+        static bool Prefix(Humanoid __0)
+        {
+            return !Guard.Block(Plugin.Feature.Dungeon, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(TeleportWorld), "Interact")]
-    class PortalPatch { static bool Prefix(Humanoid __0) { return !Guard.Block(Plugin.Feature.Teleporte, __0); } }
+    class PortalPatch
+    {
+        static bool Prefix(Humanoid __0)
+        {
+            return !Guard.Block(Plugin.Feature.Teleporte, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(Door), "Interact")]
-    class DoorPatch { static bool Prefix(Humanoid __0) { return !Guard.Block(Plugin.Feature.PortaOuPortao, __0); } }
+    class DoorPatch
+    {
+        static bool Prefix(Humanoid __0)
+        {
+            return !Guard.Block(Plugin.Feature.PortaOuPortao, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(Container), "Interact")]
-    class ContainerPatch { static bool Prefix(Humanoid __0) { return !Guard.Block(Plugin.Feature.BauOuConteiner, __0); } }
+    class ContainerPatch
+    {
+        static bool Prefix(Humanoid __0)
+        {
+            return !Guard.Block(Plugin.Feature.BauOuConteiner, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(CraftingStation), "Interact")]
-    class CraftStationPatch { static bool Prefix(Humanoid __0) { return !Guard.Block(Plugin.Feature.Estacao, __0); } }
+    class CraftStationPatch
+    {
+        static bool Prefix(Humanoid __0)
+        {
+            return !Guard.Block(Plugin.Feature.Estacao, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(CookingStation), "Interact")]
-    class CookingPatch { static bool Prefix(Humanoid __0) { return !Guard.Block(Plugin.Feature.Estacao, __0); } }
+    class CookingPatch
+    {
+        static bool Prefix(Humanoid __0)
+        {
+            return !Guard.Block(Plugin.Feature.Estacao, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(OfferingBowl), "Interact")]
-    class AltarPatch { static bool Prefix(Humanoid __0) { return !Guard.Block(Plugin.Feature.Altar, __0); } }
+    class AltarPatch
+    {
+        static bool Prefix(Humanoid __0)
+        {
+            return !Guard.Block(Plugin.Feature.Altar, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(Trader), "Interact")]
-    class TraderPatch { static bool Prefix(Humanoid __0) { return !Guard.Block(Plugin.Feature.Comerciante, __0); } }
+    class TraderPatch
+    {
+        static bool Prefix(Humanoid __0)
+        {
+            return !Guard.Block(Plugin.Feature.Comerciante, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(Player), "TryPlacePiece")]
-    class BuildPatch { static bool Prefix(Player __instance, Piece __0) { if (__0 != null && __0.GetComponent<TerrainOp>() != null) return !Plugin.Instance.BlockFeature(Plugin.Feature.AlteracaoDeTerreno, __instance); return !Plugin.Instance.BlockFeature(Plugin.Feature.Construcao, __instance); } }
+    class BuildPatch
+    {
+        static bool Prefix(Player __instance, Piece __0)
+        {
+            if (__0 != null && __0.GetComponent<TerrainOp>() != null)
+                return !Plugin.Instance.BlockFeature(Plugin.Feature.AlteracaoDeTerreno, __instance);
+            return !Plugin.Instance.BlockFeature(Plugin.Feature.Construcao, __instance);
+        }
+    }
+
     [HarmonyPatch(typeof(Player), "Repair")]
-    class RepairPatch { static bool Prefix(Player __instance) { return !Plugin.Instance.BlockFeature(Plugin.Feature.Reparo, __instance); } }
+    class RepairPatch
+    {
+        static bool Prefix(Player __instance)
+        {
+            return !Plugin.Instance.BlockFeature(Plugin.Feature.Reparo, __instance);
+        }
+    }
+
     [HarmonyPatch(typeof(Player), "RemovePiece")]
-    class RemovePatch { static bool Prefix(Player __instance) { return !Plugin.Instance.BlockFeature(Plugin.Feature.RemocaoDePeca, __instance); } }
+    class RemovePatch
+    {
+        static bool Prefix(Player __instance)
+        {
+            return !Plugin.Instance.BlockFeature(Plugin.Feature.RemocaoDePeca, __instance);
+        }
+    }
+
     [HarmonyPatch(typeof(Humanoid), "UseItem")]
-    class UseItemPatch { static bool Prefix(Humanoid __instance) { return !Guard.Block(Plugin.Feature.UsarItem, __instance); } }
+    class UseItemPatch
+    {
+        static bool Prefix(Humanoid __instance)
+        {
+            return !Guard.Block(Plugin.Feature.UsarItem, __instance);
+        }
+    }
+
     [HarmonyPatch(typeof(Minimap), "AddPin")]
-    class PinPatch { static bool Prefix() { return !Guard.BlockLocal(Plugin.Feature.MarcadorDoMapa); } }
+    class PinPatch
+    {
+        static bool Prefix()
+        {
+            return !Guard.BlockLocal(Plugin.Feature.MarcadorDoMapa);
+        }
+    }
+
     [HarmonyPatch(typeof(Minimap), "SetMapMode")]
-    class MapPatch { static bool Prefix() { return !Guard.BlockLocal(Plugin.Feature.Mapa); } }
+    class MapPatch
+    {
+        static bool Prefix()
+        {
+            return !Guard.BlockLocal(Plugin.Feature.Mapa);
+        }
+    }
+
     [HarmonyPatch(typeof(Pickable), "Interact")]
-    class PickablePatch { static bool Prefix(Pickable __instance, Humanoid __0) { return !__0.IsPlayer() || Plugin.Instance == null || !Plugin.Instance.BlockPickupPrefab(__instance.m_itemPrefab); } }
+    class PickablePatch
+    {
+        static bool Prefix(Pickable __instance, Humanoid __0)
+        {
+            return !__0.IsPlayer()
+                || Plugin.Instance == null
+                || !Plugin.Instance.BlockPickupPrefab(__instance.m_itemPrefab);
+        }
+    }
+
     [HarmonyPatch(typeof(PickableItem), "Interact")]
-    class PickableItemPatch { static bool Prefix(PickableItem __instance, Humanoid __0) { return !__0.IsPlayer() || __instance.m_itemPrefab == null || Plugin.Instance == null || !Plugin.Instance.BlockPickupPrefab(__instance.m_itemPrefab.gameObject); } }
+    class PickableItemPatch
+    {
+        static bool Prefix(PickableItem __instance, Humanoid __0)
+        {
+            return !__0.IsPlayer()
+                || __instance.m_itemPrefab == null
+                || Plugin.Instance == null
+                || !Plugin.Instance.BlockPickupPrefab(__instance.m_itemPrefab.gameObject);
+        }
+    }
+
     [HarmonyPatch(typeof(MineRock), "Damage")]
-    class MineRockPatch { static bool Prefix(HitData __0) { return !Guard.BlockDamage(Plugin.Feature.RecursosDoBioma, __0); } }
+    class MineRockPatch
+    {
+        static bool Prefix(HitData __0)
+        {
+            return !Guard.BlockDamage(Plugin.Feature.RecursosDoBioma, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(MineRock5), "Damage")]
-    class MineRock5Patch { static bool Prefix(HitData __0) { return !Guard.BlockDamage(Plugin.Feature.RecursosDoBioma, __0); } }
+    class MineRock5Patch
+    {
+        static bool Prefix(HitData __0)
+        {
+            return !Guard.BlockDamage(Plugin.Feature.RecursosDoBioma, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(TreeBase), "Damage")]
-    class TreePatch { static bool Prefix(HitData __0) { return !Guard.BlockDamage(Plugin.Feature.RecursosDoBioma, __0); } }
+    class TreePatch
+    {
+        static bool Prefix(HitData __0)
+        {
+            return !Guard.BlockDamage(Plugin.Feature.RecursosDoBioma, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(Destructible), "Damage")]
-    class DestructiblePatch { static bool Prefix(HitData __0) { return !Guard.BlockDamage(Plugin.Feature.RecursosDoBioma, __0); } }
+    class DestructiblePatch
+    {
+        static bool Prefix(HitData __0)
+        {
+            return !Guard.BlockDamage(Plugin.Feature.RecursosDoBioma, __0);
+        }
+    }
+
     [HarmonyPatch(typeof(CreatureSpawner), "Spawn")]
-    class CreatureSpawnerPatch { static bool Prefix() { return !Guard.BlockLocal(Plugin.Feature.SpawnDeCriaturas); } }
+    class CreatureSpawnerPatch
+    {
+        static bool Prefix()
+        {
+            return !Guard.BlockLocal(Plugin.Feature.SpawnDeCriaturas);
+        }
+    }
+
     [HarmonyPatch(typeof(SpawnArea), "SpawnOne")]
-    class SpawnAreaPatch { static bool Prefix() { return !Guard.BlockLocal(Plugin.Feature.SpawnDeCriaturas); } }
+    class SpawnAreaPatch
+    {
+        static bool Prefix()
+        {
+            return !Guard.BlockLocal(Plugin.Feature.SpawnDeCriaturas);
+        }
+    }
 }
