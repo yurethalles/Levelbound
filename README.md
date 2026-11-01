@@ -1,10 +1,10 @@
 # Levelbound
 
-[![Version](https://img.shields.io/badge/version-0.8.3-blue?style=flat-square)](https://github.com/)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue?style=flat-square)](https://github.com/)
 [![BepInEx](https://img.shields.io/badge/BepInEx-5-yellow?style=flat-square)](https://github.com/BepInEx/BepInEx)
 [![EpicMMO](https://img.shields.io/badge/depends-EpicMMO%20System-orange?style=flat-square)](https://thunderstore.io/c/valheim/p/Prog/EpicMMO_System/)
 [![Valheim](https://img.shields.io/badge/game-Valheim-8B4513?style=flat-square)](https://store.steampowered.com/app/892970/Valheim/)
-[![Hexium](https://img.shields.io/badge/servidor-Hexium-6a0dad?style=flat-square)](https://valheim.hexium.gg/)
+[![Glitnir](https://img.shields.io/badge/servidor-Glitnir-6a0dad?style=flat-square)](https://discord.gg/g-l-i-t-n-i-r-848339987174785054)
 
 > Mod de progressão para Valheim que vincula o acesso a itens, construções, recursos e altares ao nível do jogador no **EpicMMO System**, reforçando a progressão natural por bioma.
 
@@ -29,7 +29,7 @@
 ## O que o mod faz
 
 > [!NOTE]
-> Este mod foi desenvolvido para o servidor **[Hexium](https://valheim.hexium.gg/)** e é distribuído como repositório privado.
+> Este mod foi desenvolvido para o servidor **[Glitnir](https://discord.gg/g-l-i-t-n-i-r-848339987174785054)**.
 
 Levelbound lê arquivos YAML de configuração que mapeiam prefabs do jogo a um **bioma de progressão**. Cada bioma tem um nível mínimo de EpicMMO exigido (configurável). Quando um jogador tenta realizar uma ação com um prefab listado e **não possui o nível suficiente**, a ação é bloqueada e uma mensagem de feedback é exibida.
 

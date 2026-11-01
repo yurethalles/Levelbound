@@ -10,6 +10,10 @@ using HarmonyLib;
 using ServerSync;
 using UnityEngine;
 
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyInformationalVersion("1.0.0")]
+
 namespace DornsLevelbound
 {
     [BepInPlugin(Guid, Name, Version)]
@@ -18,7 +22,8 @@ namespace DornsLevelbound
     {
         public const string Guid = "Dorn.Levelbound",
             Name = "Levelbound",
-            Version = "0.8.3";
+            Version = "1.0.0";
+        internal const string BlockedRpc = "Levelbound_Blocked";
         const string SyncedBiomesKey = "biomas.yml";
         const string SyncedMaterialsKey = "materiais.yml";
         const string SyncedEquipmentKey = "equipamentos.yml";
@@ -90,7 +95,7 @@ namespace DornsLevelbound
             new Dictionary<Heightmap.Biome, ConfigEntry<int>>();
         FileSystemWatcher watcher,
             configWatcher;
-        DateTime lastLoad = DateTime.MinValue;
+        Coroutine debounceCoroutine;
         DateTime lastConfigReload = DateTime.MinValue;
         MethodInfo epicLevel;
         bool defaultsGenerated;
@@ -143,6 +148,7 @@ namespace DornsLevelbound
             WatchConfig();
             DebouncedLoad();
             new Harmony(Guid).PatchAll();
+            ValidateReflectionFields();
             StartCoroutine(GenerateDefaultsWhenReady());
             Logger.LogInfo("Levelbound " + Version + " loaded.");
         }
@@ -318,6 +324,8 @@ namespace DornsLevelbound
                             ? ""
                             : "\n# Rules automatically imported from biomas.yml.\n" + migrated)
                 );
+                if (!string.IsNullOrEmpty(migrated))
+                    Logger.LogInfo("Levelbound: existing rules from biomas.yml were migrated to materiais.yml. Use materiais.yml for new rules going forward.");
             }
             if (!File.Exists(Equipment))
                 File.WriteAllText(
@@ -477,10 +485,32 @@ namespace DornsLevelbound
 
         void DebouncedLoad()
         {
-            if ((DateTime.UtcNow - lastLoad).TotalMilliseconds < 300)
-                return;
-            lastLoad = DateTime.UtcNow;
+            // True debounce: resets the timer on every event and only fires
+            // after the last change, preventing partial-write reads.
+            if (debounceCoroutine != null)
+                StopCoroutine(debounceCoroutine);
+            debounceCoroutine = StartCoroutine(DelayedLoad());
+        }
+
+        IEnumerator DelayedLoad()
+        {
+            yield return new WaitForSeconds(0.5f);
+            debounceCoroutine = null;
             LoadRules();
+        }
+
+        void ValidateReflectionFields()
+        {
+            if (CurrentContainerField == null)
+                Logger.LogError("Levelbound: InventoryGui.m_currentContainer not found — container transfer blocking is disabled. A Valheim update may have renamed this field.");
+            if (typeof(InventoryGui).GetField("m_selectedRecipe", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                Logger.LogError("Levelbound: InventoryGui.m_selectedRecipe not found — craft/upgrade blocking is disabled. A Valheim update may have renamed this field.");
+            if (typeof(InventoryGui).GetField("m_craftUpgradeItem", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                Logger.LogWarning("Levelbound: InventoryGui.m_craftUpgradeItem not found — upgrade detection may not work correctly.");
+            if (typeof(InventoryGui).GetField("m_dragItem", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                Logger.LogWarning("Levelbound: InventoryGui.m_dragItem not found — drag-swap blocking from chest is disabled. A Valheim update may have renamed this field.");
+            if (typeof(InventoryGui).GetField("m_dragInventory", BindingFlags.Instance | BindingFlags.NonPublic) == null)
+                Logger.LogWarning("Levelbound: InventoryGui.m_dragInventory not found — drag-swap blocking from chest is disabled. A Valheim update may have renamed this field.");
         }
 
         void LoadRules()
@@ -557,9 +587,20 @@ namespace DornsLevelbound
                 if (!line.StartsWith("-") && line.EndsWith(":"))
                 {
                     Heightmap.Biome b;
-                    current = TryBiome(line.Substring(0, line.Length - 1).Trim(), out b)
-                        ? b
-                        : Heightmap.Biome.None;
+                    string sectionName = line.Substring(0, line.Length - 1).Trim();
+                    if (TryBiome(sectionName, out b))
+                    {
+                        current = b;
+                    }
+                    else
+                    {
+                        current = Heightmap.Biome.None;
+                        // Warn only for unknown names that aren't reserved non-biome sections.
+                        if (!string.Equals(sectionName, "Reference", StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(sectionName, "Unclassified", StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(sectionName, "Examples", StringComparison.OrdinalIgnoreCase))
+                            Logger.LogWarning("Levelbound: unrecognized YAML section '" + sectionName + "' — check the biome name for typos. Rules in this section will be ignored.");
+                    }
                     continue;
                 }
                 if (current == Heightmap.Biome.None || !line.StartsWith("-"))
@@ -676,6 +717,9 @@ namespace DornsLevelbound
             }
             catch
             {
+                // If the invocation itself failed (e.g. the EpicMMO assembly was
+                // reloaded), reset epicLevel so it is re-resolved on the next poll.
+                epicLevel = null;
                 cachedLevel = 0;
             }
             return cachedLevel;
@@ -714,26 +758,31 @@ namespace DornsLevelbound
                 : prefab;
         }
 
-        bool ItemRule(ItemDrop.ItemData item, out Heightmap.Biome biome)
+        bool ItemRule(ItemDrop.ItemData item, out Heightmap.Biome biome, string prefabOverride = null)
         {
             biome = Heightmap.Biome.None;
-            if (item == null || item.m_dropPrefab == null)
+            if (!string.IsNullOrEmpty(prefabOverride) && itemBiomes.TryGetValue(prefabOverride, out biome))
+                return true;
+            if (item == null)
                 return false;
-            return itemBiomes.TryGetValue(PrefabName(item.m_dropPrefab), out biome);
+            if (item.m_dropPrefab != null && itemBiomes.TryGetValue(PrefabName(item.m_dropPrefab), out biome))
+                return true;
+            return false;
         }
 
         internal bool Blocked(
             ItemDrop.ItemData item,
             ActionKind action,
             out int requirement,
-            Player player = null
+            Player player = null,
+            string prefabOverride = null
         )
         {
             requirement = 0;
             if (Bypass(player))
                 return false;
             Heightmap.Biome b;
-            if (!ItemRule(item, out b))
+            if (!ItemRule(item, out b, prefabOverride))
                 return false;
             int required = RequiredLevel(b);
             if (required <= 0 || Level(player) >= required)
@@ -829,11 +878,20 @@ namespace DornsLevelbound
 
         internal void Tell(Player player, int n)
         {
-            // Visual feedback belongs to the owning client. The dedicated
-            // server still denies the action, but has no MessageHud/local
-            // player to write to.
-            if (player == null || player != Player.m_localPlayer)
+            if (player == null)
                 return;
+            // Server-side block: the server has no local MessageHud, so route the
+            // feedback to the owning client via RPC instead of discarding it.
+            if (player != Player.m_localPlayer)
+            {
+                if (ZNet.instance == null || !ZNet.instance.IsServer())
+                    return;
+                ZNetView view = player.GetComponent<ZNetView>();
+                ZDO zdo = view == null ? null : view.GetZDO();
+                if (zdo != null)
+                    ZRoutedRpc.instance.InvokeRoutedRPC(zdo.GetOwner(), BlockedRpc, n);
+                return;
+            }
             if (Time.time < nextItemMessage)
                 return;
             nextItemMessage = Time.time + Mathf.Max(0f, blockedActionCooldown.Value);
@@ -851,10 +909,16 @@ namespace DornsLevelbound
             );
         }
 
-        internal string RequirementText(ItemDrop.ItemData item, ActionKind action)
+        internal string RequirementText(ItemDrop.ItemData item, ActionKind action, string prefabOverride = null)
         {
+            bool enabled = action == ActionKind.Craft ? blockCraft.Value
+                : action == ActionKind.Upgrade ? blockUpgrade.Value
+                : action == ActionKind.Equip ? blockEquip.Value
+                : blockConsume.Value;
+            if (!enabled)
+                return "";
             Heightmap.Biome b;
-            if (!ItemRule(item, out b))
+            if (!ItemRule(item, out b, prefabOverride))
                 return "";
             int required = RequiredLevel(b);
             if (required <= 0)
@@ -869,6 +933,16 @@ namespace DornsLevelbound
                 + " (your level: "
                 + current
                 + ")</color>";
+        }
+
+        internal string RequirementTooltip(int n)
+        {
+            int current = Level(Player.m_localPlayer);
+            return blockedActionMessage.Value
+                .Replace("{required}", n.ToString())
+                .Replace("{current}", current.ToString())
+                .Replace("{nivel}", n.ToString())
+                .Replace("{atual}", current.ToString());
         }
 
         bool ConstructionRule(Piece piece, out Heightmap.Biome biome)
@@ -912,6 +986,8 @@ namespace DornsLevelbound
 
         internal string ConstructionRequirementText(Piece piece)
         {
+            if (!blockPlacement.Value)
+                return "";
             Heightmap.Biome biome;
             if (!ConstructionRule(piece, out biome))
                 return "";
@@ -998,6 +1074,8 @@ namespace DornsLevelbound
 
         internal string AltarRequirementText(OfferingBowl altar)
         {
+            if (!blockAltars.Value)
+                return "";
             int required;
             if (!TryAltarLevel(altar, out required))
                 return "";
@@ -1092,13 +1170,13 @@ namespace DornsLevelbound
             add(Heightmap.Biome.Meadows, new[] {
                 "Wood", "Stone", "Flint", "Resin", "LeatherScraps", "DeerHide",
                 "DeerMeat", "BoarMeat", "NeckTail", "Dandelion", "Mushroom",
-                "Raspberry", "Honey", "FineWood"
+                "Raspberry", "Honey", "FineWood", "Feathers"
             });
             add(Heightmap.Biome.BlackForest, new[] {
                 "CopperOre", "TinOre", "Copper", "Tin", "Bronze", "BronzeNails",
                 "RoundLog", "CoreWood", "GreydwarfEye", "SurtlingCore", "TrollHide",
                 "CarrotSeeds", "Carrot", "Thistle", "Blueberries", "MushroomYellow",
-                "AncientSeed", "BoneFragments"
+                "AncientSeed", "BoneFragments", "Coins", "YmirRemains"
             });
             add(Heightmap.Biome.Swamp, new[] {
                 "IronScrap", "ScrapIron", "Iron", "IronNails", "ElderBark",
@@ -1242,9 +1320,8 @@ namespace DornsLevelbound
                 if (requirement == null || requirement.m_resItem == null || requirement.m_amount <= 0)
                     continue;
                 Heightmap.Biome ingredient;
-                if (!items.TryGetValue(PrefabName(requirement.m_resItem.gameObject), out ingredient))
-                    return false;
-                highest = Math.Max(highest, BiomeOrder(ingredient));
+                if (items.TryGetValue(PrefabName(requirement.m_resItem.gameObject), out ingredient))
+                    highest = Math.Max(highest, BiomeOrder(ingredient));
             }
             if (highest < 0)
                 return false;
@@ -1497,7 +1574,13 @@ namespace DornsLevelbound
             AppendMappings(Resources, resources, originalResources, "Registered resources inferred from the world");
             AppendMappings(Constructions, constructions, originalConstructions, "Registered build pieces inferred from recipes");
             YamlData.AssignLocalValue(ReadYaml());
-            lastLoad = DateTime.MinValue;
+            // Cancel any pending debounce and load immediately — the files were
+            // just written by this method and are guaranteed to be complete.
+            if (debounceCoroutine != null)
+            {
+                StopCoroutine(debounceCoroutine);
+                debounceCoroutine = null;
+            }
             LoadRules();
             Logger.LogInfo(
                 "Automatic file generation completed: +"
@@ -1584,7 +1667,8 @@ namespace DornsLevelbound
                     s.Append("    - ").Append(prefab).Append("\n");
             }
             File.WriteAllText(Helper, s.ToString());
-            Logger.LogInfo("Reference list created: " + Helper);
+            Logger.LogInfo("Levelbound: reference list created at: " + Helper);
+            Logger.LogInfo("Levelbound: to regenerate the reference list after adding mods, delete the file above and restart with GenerateEquipableItemList = true.");
         }
 
         internal enum ActionKind
@@ -1661,15 +1745,11 @@ namespace DornsLevelbound
         }
     }
 
-    [HarmonyPatch(typeof(InventoryGui), "DoCrafting")]
-    class CraftPatch
+    [HarmonyPatch(typeof(InventoryGui), "OnCraftPressed")]
+    class CraftPressedPatch
     {
         static readonly FieldInfo Selected = typeof(InventoryGui).GetField(
             "m_selectedRecipe",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        );
-        static readonly FieldInfo UpgradeItem = typeof(InventoryGui).GetField(
-            "m_craftUpgradeItem",
             BindingFlags.Instance | BindingFlags.NonPublic
         );
 
@@ -1685,11 +1765,67 @@ namespace DornsLevelbound
             if (recipe == null || recipe.m_item == null)
                 return true;
             ItemDrop d = recipe.m_item.GetComponent<ItemDrop>();
+            if (d == null)
+                return true;
+            if (d.m_itemData != null && d.m_itemData.m_dropPrefab == null)
+                d.m_itemData.m_dropPrefab = recipe.m_item.gameObject;
+            string prefab = recipe.m_item.gameObject.name;
+            PropertyInfo itemDataProp = pair.GetType().GetProperty("ItemData");
+            ItemDrop.ItemData upgradeItem = itemDataProp == null ? null : itemDataProp.GetValue(pair, null) as ItemDrop.ItemData;
+            Plugin.ActionKind action = upgradeItem == null ? Plugin.ActionKind.Craft : Plugin.ActionKind.Upgrade;
             int n;
+            if (!Plugin.Instance.Blocked(d.m_itemData, action, out n, Player.m_localPlayer, prefab))
+                return true;
+            Plugin.Instance.Tell(Player.m_localPlayer, n);
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(InventoryGui), "DoCrafting")]
+    class CraftPatch
+    {
+        static readonly FieldInfo CraftRecipeField = typeof(InventoryGui).GetField(
+            "m_craftRecipe",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+        static readonly FieldInfo Selected = typeof(InventoryGui).GetField(
+            "m_selectedRecipe",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+        static readonly FieldInfo UpgradeItem = typeof(InventoryGui).GetField(
+            "m_craftUpgradeItem",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+
+        static bool Prefix(InventoryGui __instance)
+        {
+            if (__instance == null || Plugin.Instance == null)
+                return true;
+            Recipe recipe = null;
+            if (CraftRecipeField != null)
+                recipe = CraftRecipeField.GetValue(__instance) as Recipe;
+            if (recipe == null && Selected != null)
+            {
+                object pair = Selected.GetValue(__instance);
+                if (pair != null)
+                {
+                    PropertyInfo p = pair.GetType().GetProperty("Recipe");
+                    recipe = p == null ? null : p.GetValue(pair, null) as Recipe;
+                }
+            }
+            if (recipe == null || recipe.m_item == null)
+                return true;
+            ItemDrop d = recipe.m_item.GetComponent<ItemDrop>();
+            if (d == null)
+                return true;
+            if (d.m_itemData != null && d.m_itemData.m_dropPrefab == null)
+                d.m_itemData.m_dropPrefab = recipe.m_item.gameObject;
+            string prefab = recipe.m_item.gameObject.name;
             Plugin.ActionKind action = UpgradeItem == null || UpgradeItem.GetValue(__instance) == null
                 ? Plugin.ActionKind.Craft
                 : Plugin.ActionKind.Upgrade;
-            if (d == null || !Plugin.Instance.Blocked(d.m_itemData, action, out n))
+            int n;
+            if (!Plugin.Instance.Blocked(d.m_itemData, action, out n, Player.m_localPlayer, prefab))
                 return true;
             Plugin.Instance.Tell(Player.m_localPlayer, n);
             return false;
@@ -1701,8 +1837,13 @@ namespace DornsLevelbound
     {
         static void Postfix(ItemDrop.ItemData __instance, ref string __result)
         {
-            if (Plugin.Instance != null)
-                __result += Plugin.Instance.RequirementText(__instance, Plugin.ActionKind.Equip);
+            if (Plugin.Instance != null && __instance != null && __instance.m_shared != null)
+            {
+                Plugin.ActionKind action = __instance.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Consumable
+                    ? Plugin.ActionKind.Consume
+                    : Plugin.ActionKind.Equip;
+                __result += Plugin.Instance.RequirementText(__instance, action);
+            }
         }
     }
 
@@ -1717,6 +1858,74 @@ namespace DornsLevelbound
             Player player = __instance as Player;
             if (drop == null || !Plugin.Instance.BlockItemPickup(drop.m_itemData, player))
                 return true;
+            return false;
+        }
+    }
+
+    // Intercepts the drag-and-drop swap that happens when a locked item from the
+    // chest is dragged onto an unlocked item in the player's inventory.  In that
+    // scenario Valheim executes two MoveItemToThis calls:
+    //   1. player-item  → chest   (allowed by BlockContainerTransfer)
+    //   2. locked-item  → player  (should be blocked)
+    // Because call 1 runs before call 2, blocking only call 2 leaves the player
+    // with an empty slot (their item already moved to the chest).  The fix is to
+    // intercept OnSelectedItem *before* either call runs and reject the entire
+    // operation when the dragged item is a locked chest item being dropped onto
+    // an occupied player-inventory slot.
+    [HarmonyPatch(typeof(InventoryGui), "OnSelectedItem")]
+    class DragSwapBlockPatch
+    {
+        static readonly FieldInfo DragItem = typeof(InventoryGui).GetField(
+            "m_dragItem",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+        static readonly FieldInfo DragInventory = typeof(InventoryGui).GetField(
+            "m_dragInventory",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+        static readonly FieldInfo CurrentContainer = typeof(InventoryGui).GetField(
+            "m_currentContainer",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+
+        static bool Prefix(
+            InventoryGui __instance,
+            InventoryGrid grid,
+            ItemDrop.ItemData item,
+            Vector2i pos,
+            InventoryGrid.Modifier mod
+        )
+        {
+            if (Plugin.Instance == null || DragItem == null || DragInventory == null || CurrentContainer == null)
+                return true;
+
+            // Only intercept when we are dropping a dragged item (m_dragItem != null)
+            // onto an occupied slot in the player's inventory.
+            ItemDrop.ItemData draggedItem = DragItem.GetValue(__instance) as ItemDrop.ItemData;
+            if (draggedItem == null || item == null || draggedItem == item)
+                return true;
+
+            Inventory draggedFrom = DragInventory.GetValue(__instance) as Inventory;
+            Player player = Player.m_localPlayer;
+            if (player == null || draggedFrom == null)
+                return true;
+
+            // The dragged item must come from the currently open chest.
+            Container container = CurrentContainer.GetValue(__instance) as Container;
+            if (container == null || draggedFrom != container.GetInventory())
+                return true;
+
+            // The drop target must be in the player's own inventory.
+            if (grid == null || grid.GetInventory() != player.GetInventory())
+                return true;
+
+            // Check whether the dragged (chest) item is locked for this player.
+            int requirement;
+            if (!Plugin.Instance.ItemLevelLocked(draggedItem, out requirement, player))
+                return true;
+
+            // The swap would bypass the pickup restriction — cancel the whole operation.
+            Plugin.Instance.Tell(player, requirement);
             return false;
         }
     }
@@ -1835,10 +2044,6 @@ namespace DornsLevelbound
             "m_selectedRecipe",
             BindingFlags.Instance | BindingFlags.NonPublic
         );
-        static readonly FieldInfo UpgradeItem = typeof(InventoryGui).GetField(
-            "m_craftUpgradeItem",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        );
 
         static void Postfix(InventoryGui __instance)
         {
@@ -1854,13 +2059,27 @@ namespace DornsLevelbound
             ItemDrop d = recipe.m_item.GetComponent<ItemDrop>();
             if (d == null)
                 return;
-            Plugin.ActionKind action = UpgradeItem == null || UpgradeItem.GetValue(__instance) == null
-                ? Plugin.ActionKind.Craft
-                : Plugin.ActionKind.Upgrade;
-            __instance.m_recipeDecription.text += Plugin.Instance.RequirementText(d.m_itemData, action);
+            if (d.m_itemData != null && d.m_itemData.m_dropPrefab == null)
+                d.m_itemData.m_dropPrefab = recipe.m_item.gameObject;
+            string prefab = recipe.m_item.gameObject.name;
+            PropertyInfo itemDataProp = pair.GetType().GetProperty("ItemData");
+            ItemDrop.ItemData upgradeItem = itemDataProp == null ? null : itemDataProp.GetValue(pair, null) as ItemDrop.ItemData;
+            Plugin.ActionKind action = upgradeItem == null ? Plugin.ActionKind.Craft : Plugin.ActionKind.Upgrade;
+            string reqText = Plugin.Instance.RequirementText(d.m_itemData, action, prefab).Trim();
+            if (!string.IsNullOrEmpty(reqText))
+                __instance.m_recipeDecription.text = reqText + "\n\n" + __instance.m_recipeDecription.text;
             int n;
-            if (Plugin.Instance.Blocked(d.m_itemData, action, out n))
+            if (Plugin.Instance.Blocked(d.m_itemData, action, out n, Player.m_localPlayer, prefab))
+            {
                 __instance.m_craftButton.interactable = false;
+                UITooltip tooltip = __instance.m_craftButton.GetComponent<UITooltip>();
+                if (tooltip != null)
+                {
+                    tooltip.m_text = Localization.instance != null
+                        ? Localization.instance.Localize(Plugin.Instance.RequirementTooltip(n))
+                        : Plugin.Instance.RequirementTooltip(n);
+                }
+            }
         }
     }
 
@@ -1997,6 +2216,24 @@ namespace DornsLevelbound
         {
             return Plugin.Instance == null
                 || !Plugin.Instance.BlockResourceDamage(__instance.gameObject, __0);
+        }
+    }
+
+    // Registers the client-side RPC handler that receives the blocked-action
+    // message forwarded from the dedicated server by Plugin.Tell().
+    [HarmonyPatch(typeof(Game), "Start")]
+    class RpcRegisterPatch
+    {
+        static void Postfix()
+        {
+            if (ZRoutedRpc.instance != null)
+            {
+                ZRoutedRpc.instance.Register<int>(Plugin.BlockedRpc, (_, required) =>
+                {
+                    if (Plugin.Instance != null)
+                        Plugin.Instance.Tell(Player.m_localPlayer, required);
+                });
+            }
         }
     }
 }
