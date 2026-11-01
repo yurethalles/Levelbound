@@ -1,14 +1,18 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <UsingTask AssemblyFile="C:\Users\Usuario\.nuget\packages\ilrepack.lib.msbuild.task\2.0.18.2\build\ILRepack.Lib.MSBuild.Task.dll" TaskName="ILRepack" />
+  <PropertyGroup>
+    <LevelboundRaw Condition="'$(LevelboundRaw)' == ''">$(MSBuildProjectDirectory)\outputs\Levelbound.raw.dll</LevelboundRaw>
+    <LevelboundOutput Condition="'$(LevelboundOutput)' == ''">$(MSBuildProjectDirectory)\outputs\Levelbound.dll</LevelboundOutput>
+  </PropertyGroup>
   <Target Name="Pack">
     <ItemGroup>
-      <InputAssemblies Include="$(MSBuildProjectDirectory)\outputs\Levelbound.raw.dll" />
+      <InputAssemblies Include="$(LevelboundRaw)" />
       <InputAssemblies Include="$(MSBuildProjectDirectory)\ServerSync\bin\Release\ServerSync.dll" />
     </ItemGroup>
     <ItemGroup>
       <LibraryPath Include="C:\Users\Usuario\AppData\Roaming\com.kesomannen.gale\valheim\profiles\Glitnir Northbound - Teste\BepInEx\core" />
       <LibraryPath Include="C:\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed" />
     </ItemGroup>
-    <ILRepack Parallel="true" DebugInfo="false" AllowDuplicateResources="true" Internalize="true" InputAssemblies="@(InputAssemblies)" LibraryPath="@(LibraryPath)" TargetKind="Dll" OutputFile="$(MSBuildProjectDirectory)\outputs\Levelbound.dll" />
+    <ILRepack Parallel="true" DebugInfo="false" AllowDuplicateResources="true" Internalize="true" InputAssemblies="@(InputAssemblies)" LibraryPath="@(LibraryPath)" TargetKind="Dll" OutputFile="$(LevelboundOutput)" />
   </Target>
 </Project>
