@@ -322,5 +322,5 @@ O arquivo `pack-levelbound.proj` usa o pacote NuGet `ILRepack.Lib.MSBuild.Task` 
 
 ---
 
-*Desenvolvido por Dorn para o servidor [Hexium](https://valheim.hexium.gg/).*
+*Desenvolvido por Dorn para o servidor [Glitnir](https://discord.com/invite/g-l-i-t-n-i-r-848339987174785054).*
 
